@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { Collapsible } from '@/components/Collapsible';
 import { ExternalLink } from '@/components/ExternalLink';
@@ -7,8 +8,24 @@ import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import { useAuth } from '@/context/AuthContext';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function TabTwoScreen() {
+  const colorScheme = useColorScheme();
+  const { logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/auth/login');
+  };
+
+  const handleProfilePress = () => {
+    router.push('/profile');
+  };
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
@@ -20,10 +37,26 @@ export default function TabTwoScreen() {
           style={styles.headerImage}
         />
       }>
-      <ThemedView style={styles.titleContainer}>
+      <View style={styles.headerActions}>
         <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            onPress={handleProfilePress}
+            style={styles.actionButton}
+          >
+            <ThemedText>Profile</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={handleLogout}
+            style={[styles.actionButton, styles.logoutButton]}
+          >
+            <ThemedText style={styles.logoutText}>Logout</ThemedText>
+          </TouchableOpacity>
+        </View>
+      </View>
+      
       <ThemedText>This app includes example code to help you get started.</ThemedText>
+      
       <Collapsible title="File-based routing">
         <ThemedText>
           This app has two screens:{' '}
@@ -102,6 +135,28 @@ const styles = StyleSheet.create({
     bottom: -90,
     left: -35,
     position: 'absolute',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#F0F0F0',
+  },
+  logoutButton: {
+    backgroundColor: '#FFE5E5',
+  },
+  logoutText: {
+    color: '#D32F2F',
   },
   titleContainer: {
     flexDirection: 'row',
