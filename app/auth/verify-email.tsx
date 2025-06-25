@@ -1,5 +1,5 @@
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,7 +9,6 @@ import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/context/AuthContext';
 import { authApi } from '@/api/authApi';
 import storage from '@/utils/storage';
-import { AlertModal } from '@/components/AlertModal';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
@@ -19,28 +18,22 @@ export default function VerifyEmailScreen() {
   const [otp, setOtp] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
   const [emailToVerify, setEmailToVerify] = useState<string | null>(null);
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertTitle, setAlertTitle] = useState('');
-  const [alertType, setAlertType] = useState<'error' | 'success' | 'warning' | 'info'>('info');
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Get email either from user object, params, or secure storage
   useEffect(() => {
-    console.log("Verification screen mounted", params);
-    
     const loadEmail = async () => {
       let email = null;
       
       // Try to get email from params
       if (params.email && typeof params.email === 'string') {
         email = params.email;
-        console.log("Found email in params:", email);
       }
       
       // If not in params, try from user context
       if (!email && user?.email) {
         email = user.email;
-        console.log("Found email in user context:", email);
       }
       
       // If still not found, try from secure storage
@@ -48,29 +41,37 @@ export default function VerifyEmailScreen() {
         const storedEmail = await storage.getEmailToVerify();
         if (storedEmail) {
           email = storedEmail;
-          console.log("Found email in secure storage:", email);
         }
       }
       
       if (email) {
         setEmailToVerify(email);
-        console.log("Email set for verification:", email);
-        
-        // Save email to secure storage as backup
         await storage.saveEmailToVerify(email);
       }
       
       // Redirect if user is already verified
       if (user && user.isVerified) {
-        setAlertTitle('Already Verified');
-        setAlertMessage('Your email is already verified. Redirecting to home.');
-        setAlertType('success');
-        setAlertVisible(true);
+        setSuccessMessage('Your email is already verified. Redirecting to home.');
+        setTimeout(() => router.replace('/(tabs)'), 2000);
       }
     };
     
     loadEmail();
   }, [user, params]);
+
+  // Reset error and success state when screen loses focus
+  useFocusEffect(
+    useCallback(() => {
+      // When screen comes into focus
+      
+      return () => {
+        // When screen loses focus
+        setLocalError(null);
+        setSuccessMessage(null);
+        clearError();
+      };
+    }, [clearError])
+  );
 
   if (isLoading) {
     return (
@@ -101,67 +102,53 @@ export default function VerifyEmailScreen() {
 
   const handleVerify = async () => {
     if (!otp) {
-      setAlertTitle('Validation Error');
-      setAlertMessage('Please enter the verification code');
-      setAlertType('warning');
-      setAlertVisible(true);
+      setLocalError('Please enter the verification code');
       return;
     }
 
     if (!emailToVerify) {
-      setAlertTitle('Error');
-      setAlertMessage('No email found. Please try logging in again.');
-      setAlertType('error');
-      setAlertVisible(true);
+      setLocalError('No email found. Please try logging in again.');
       return;
     }
 
+    setLocalError(null);
+    
     try {
       const response = await verifyEmail(emailToVerify, otp);
       
       if (response && response.success) {
-        setAlertTitle('Success');
-        setAlertMessage('Email verification successful! You can now use all features.');
-        setAlertType('success');
-        setAlertVisible(true);
+        setSuccessMessage('Email verification successful! You can now use all features.');
+        setTimeout(() => router.replace('/(tabs)'), 2000);
       } else {
-        throw new Error(response.message || 'Verification failed. Please try again with a valid code.');
+        setLocalError(response.message || 'Verification failed. Please try again.');
       }
     } catch (error) {
-      console.log('Verification error:', error);
-      setAlertTitle('Verification Error');
-      setAlertMessage(`${error instanceof Error ? error.message : 'Invalid verification code'}. Please try again.`);
-      setAlertType('error');
-      setAlertVisible(true);
+      setLocalError(error instanceof Error ? error.message : 'Invalid verification code. Please try again.');
     }
   };
 
   const handleResendOTP = async () => {
     if (!emailToVerify) {
-      setAlertTitle('Error');
-      setAlertMessage('No email found. Please try logging in again.');
-      setAlertType('error');
-      setAlertVisible(true);
+      setLocalError('No email found. Please try logging in again.');
       return;
     }
     
     setResendLoading(true);
+    setLocalError(null);
+    
     try {
       const response = await authApi.forgotPassword(emailToVerify);
       
       if (response && response.success) {
-        setAlertTitle('Code Sent');
-        setAlertMessage('A new verification code has been sent to your email');
-        setAlertType('success');
-        setAlertVisible(true);
+        setSuccessMessage('A new verification code has been sent to your email');
+        
+        // Hide success message after 3 seconds
+        setTimeout(() => setSuccessMessage(null), 3000);
       } else {
-        throw new Error(response.message || 'Failed to send code. Please try again later.');
+        setLocalError(response.message || 'Failed to send code. Please try again later.');
       }
     } catch (error) {
-      setAlertTitle('Error');
-      setAlertMessage(`Failed to resend verification code: ${error instanceof Error ? error.message : 'Server error'}`);
-      setAlertType('error');
-      setAlertVisible(true);
+      setLocalError(`Failed to resend verification code: ${error instanceof Error ? error.message : 'Server error'}`);
     } finally {
       setResendLoading(false);
     }
@@ -182,7 +169,15 @@ export default function VerifyEmailScreen() {
           </View>
 
           <View style={styles.form}>
-            {error && <AuthError message={error} />}
+            {/* Show success message */}
+            {successMessage && (
+              <View style={styles.successContainer}>
+                <ThemedText style={styles.successText}>{successMessage}</ThemedText>
+              </View>
+            )}
+            
+            {/* Show error message */}
+            {(error || localError) && <AuthError message={error || localError} />}
 
             <AuthInput
               placeholder="Enter Verification Code"
@@ -190,6 +185,7 @@ export default function VerifyEmailScreen() {
               onChangeText={(text) => {
                 setOtp(text);
                 clearError();
+                setLocalError(null);
               }}
               keyboardType="numeric"
             />
@@ -198,7 +194,7 @@ export default function VerifyEmailScreen() {
               title="Verify Email"
               onPress={handleVerify}
               isLoading={isLoading}
-              disabled={!otp}
+              disabled={!otp || isLoading}
             />
 
             <TouchableOpacity 
@@ -213,25 +209,6 @@ export default function VerifyEmailScreen() {
           </View>
         </ThemedView>
       </KeyboardAvoidingView>
-
-      {/* Alert Modal */}
-      <AlertModal
-        visible={alertVisible}
-        title={alertTitle}
-        message={alertMessage}
-        type={alertType}
-        onClose={() => {
-          setAlertVisible(false);
-          clearError();
-          
-          if (alertType === 'success' && alertTitle === 'Success') {
-            // Navigate to home on successful verification
-            router.replace('/(tabs)');
-          } else if (alertType === 'success' && alertTitle === 'Already Verified') {
-            router.replace('/(tabs)');
-          }
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -260,5 +237,16 @@ const styles = StyleSheet.create({
   resendText: {
     color: '#0a7ea4',
     fontWeight: '500',
+  },
+  successContainer: {
+    backgroundColor: '#E8F5E9',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  successText: {
+    color: '#2E7D32',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

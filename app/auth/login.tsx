@@ -1,61 +1,57 @@
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthInput, AuthButton, AuthError } from '@/components/AuthComponents';
-import { AlertModal } from '@/components/AlertModal';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/context/AuthContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, error, clearError, isLoading } = useAuth();
+  const { login, clearError, isLoading } = useAuth();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertTitle, setAlertTitle] = useState('Login Error');
-  const [alertType, setAlertType] = useState<'error' | 'success' | 'warning' | 'info'>('error');
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Reset error state when screen gains/loses focus
+  useFocusEffect(
+    useCallback(() => {
+      // When screen comes into focus
+      return () => {
+        // When screen loses focus
+        setLocalError(null);
+        clearError();
+      };
+    }, [clearError])
+  );
 
   const handleLogin = async () => {
+    // Simple validation
     if (!email || !password) {
-      setAlertTitle('Validation Error');
-      setAlertMessage('Please enter both email and password');
-      setAlertType('warning');
-      setAlertVisible(true);
+      setLocalError('Please enter both email and password');
       return;
     }
     
+    // Clear previous errors
+    setLocalError(null);
+    
     try {
+      // Call login function from auth context
+      const result = await login(email, password);
       
-      const response = await login(email, password);
-      console.log("res:",response);
-      
-      if (response && response.success) {
-        setAlertTitle('Login Success');
-        setAlertMessage('You have successfully logged in!');
-        setAlertType('success');
-        setAlertVisible(true);
-        
-        // Wait for user to acknowledge success before navigating
-        setTimeout(() => {
-          if (response.user && !response.user.isVerified) {
-            router.replace('/auth/verify-email');
-          } else {
-            router.replace('/(tabs)');
-          }
-        }, 1000);
+      if (result.success) {
+        // Success - redirect to home page
+        router.replace('/(tabs)');
       } else {
-        throw new Error(response.message || 'Login failed');
+        // Error from server - show error message
+        setLocalError(result.message || 'Invalid email or password');
       }
     } catch (error) {
-      setAlertTitle('Login Error');
-      setAlertMessage(`${error instanceof Error ? error.message : 'Invalid credentials'}. Please try again.`);
-      setAlertType('error');
-      setAlertVisible(true);
+      // Network or other error
+      setLocalError(error instanceof Error ? error.message : 'Failed to connect to server');
     }
   };
 
@@ -72,14 +68,15 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.form}>
-            {error && <AuthError message={error} />}
+            {/* Display error messages directly in the UI */}
+            {localError && <AuthError message={localError} />}
 
             <AuthInput
               placeholder="Email"
               value={email}
               onChangeText={(text) => {
                 setEmail(text);
-                clearError();
+                setLocalError(null);
               }}
               keyboardType="email-address"
             />
@@ -89,7 +86,7 @@ export default function LoginScreen() {
               value={password}
               onChangeText={(text) => {
                 setPassword(text);
-                clearError();
+                setLocalError(null);
               }}
               secureTextEntry
             />
@@ -105,7 +102,7 @@ export default function LoginScreen() {
               title="Login"
               onPress={handleLogin}
               isLoading={isLoading}
-              disabled={!email || !password}
+              disabled={isLoading}
             />
 
             <View style={styles.signupContainer}>
@@ -117,23 +114,6 @@ export default function LoginScreen() {
           </View>
         </ThemedView>
       </KeyboardAvoidingView>
-
-      {/* Alert Modal for displaying errors */}
-      <AlertModal
-        visible={alertVisible}
-        title={alertTitle}
-        message={alertMessage}
-        type={alertType}
-        onClose={() => {
-          setAlertVisible(false);
-          clearError();
-          
-          // If it was a success alert, navigate after closing
-          if (alertType === 'success') {
-            router.replace('/(tabs)');
-          }
-        }}
-      />
     </SafeAreaView>
   );
 }

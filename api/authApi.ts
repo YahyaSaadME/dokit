@@ -45,15 +45,18 @@ export const authApi = {
     }
   },
 
-  // Login user
+  // Login user - simplified error handling
   login: async (email: string, password: string): Promise<AuthResponse> => {
     try {
       const response = await api.post<AuthResponse>('/auth/login', { email, password });
-      console.log(response.data);
-      
       return response.data;
-    } catch (error) {
-      throw handleApiError(error);
+    } catch (error:any) {
+      if (error.response && error.response.data) {
+        // Return the server's error response
+        return error.response.data;
+      }
+      // For network errors
+      throw new Error('Network error. Please check your connection.');
     }
   },
 
@@ -100,14 +103,29 @@ export const authApi = {
 
 // Helper to handle API errors
 const handleApiError = (error: any): string => {
+  console.log("API Error:", error);
+  
   if (error.response) {
     // Server responded with an error status
-    return error.response.data.message || 'An error occurred with the request.';
+    const message = error.response.data?.message || 
+                    error.response.data?.error || 
+                    'An error occurred with the request.';
+    
+    // For debugging - log the full response
+    console.log('API error response:', {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      data: error.response.data
+    });
+    
+    return message;
   } else if (error.request) {
     // Request was made but no response
+    console.log('API no response error:', error.request);
     return 'No response received from server. Please check your internet connection.';
   } else {
     // Other errors
+    console.log('API setup error:', error.message);
     return error.message || 'An unknown error occurred.';
   }
 };

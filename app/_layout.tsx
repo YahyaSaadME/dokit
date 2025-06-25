@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Slot, Stack, useRouter, SplashScreen, usePathname, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { View, ActivityIndicator } from 'react-native';
 
@@ -47,57 +47,30 @@ function AuthenticationGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const isAuthGroup = segments[0] === 'auth';
+  const [isNavigating, setIsNavigating] = useState(false);
   
   useEffect(() => {
-    if (isLoading) return;
-
-    // Check if we're on the verification page and extract email param
-    const isVerifyEmailPage = pathname.includes('verify-email');
-    const pathParts = pathname.split('?');
-    const hasParams = pathParts.length > 1;
-    const urlParams = hasParams ? new URLSearchParams(pathParts[1]) : null;
-    const hasEmailParam = urlParams?.has('email') || false;
+    // Skip redirection if we're already in the auth group or we're loading
+    if (isLoading || isNavigating) return;
     
-    console.log("Auth guard check:", { 
-      hasEmailParam, 
-      inAuthGroup: isAuthGroup,
-      isAuthenticated, 
-      pathname,
-      userVerified: user?.isVerified || false
-    });
-
-    // Special case for verification page
-    if (isVerifyEmailPage) {
-      return; // Allow access to verification page regardless of auth status
-    }
-
+    const isLoginPage = pathname === '/auth/login';
+    
     if (isAuthenticated) {
-      // If user is authenticated but not verified, redirect to verification
-      if (user && !user.isVerified) {
-        if (!isVerifyEmailPage) {
-          router.replace('/auth/verify-email');
-        }
-      } 
-      // If user is authenticated and verified but still in auth group, redirect to main app
-      else if (user && user.isVerified && isAuthGroup) {
+      // If authenticated but on login page, redirect to home
+      if (isLoginPage && !isNavigating) {
+        setIsNavigating(true);
         router.replace('/(tabs)');
+        setTimeout(() => setIsNavigating(false), 1000);
       }
     } else {
-      // Not authenticated and not in auth group, redirect to login
-      if (!isAuthGroup) {
+      // If not authenticated and not on an auth page, redirect to login
+      if (!isAuthGroup && !isNavigating) {
+        setIsNavigating(true);
         router.replace('/auth/login');
+        setTimeout(() => setIsNavigating(false), 1000);
       }
     }
-  }, [isAuthenticated, isLoading, pathname, isAuthGroup, user]);
-
-  // Ensure the children render correctly
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#0a7ea4" />
-      </View>
-    );
-  }
+  }, [isAuthenticated, isLoading, pathname, isNavigating]);
 
   return <>{children}</>;
 }

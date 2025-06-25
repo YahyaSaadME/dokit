@@ -1,5 +1,5 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -50,6 +50,17 @@ export default function ResetPasswordScreen() {
       console.log('Reset password error');
     }
   };
+
+  // Reset states when screen loses focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setValidationError(null);
+        setIsSuccess(false);
+        clearError();
+      };
+    }, [clearError])
+  );
 
   return (
     <SafeAreaView style={{ flex: 1 }}>

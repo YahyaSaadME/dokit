@@ -1,10 +1,9 @@
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthInput, AuthButton, AuthError } from '@/components/AuthComponents';
-import { AlertModal } from '@/components/AlertModal';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/context/AuthContext';
@@ -17,29 +16,26 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertTitle, setAlertTitle] = useState('Registration Error');
-  const [alertType, setAlertType] = useState<'error' | 'success' | 'warning' | 'info'>('error');
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const validateForm = () => {
     if (!name || !email || !password || !confirmPassword) {
-      setValidationError('All fields are required');
+      setLocalError('All fields are required');
       return false;
     }
     
     if (password !== confirmPassword) {
-      setValidationError('Passwords do not match');
+      setLocalError('Passwords do not match');
       return false;
     }
     
     if (password.length < 6) {
-      setValidationError('Password must be at least 6 characters');
+      setLocalError('Password must be at least 6 characters');
       return false;
     }
     
-    setValidationError(null);
+    setLocalError(null);
     return true;
   };
   
@@ -49,26 +45,37 @@ export default function RegisterScreen() {
     try {
       const response = await register(name, email, password);
       
-      console.log("Registration response:", response);
-      
       if (response && response.success) {
-        setAlertTitle('Registration Success');
-        setAlertMessage(`Account created successfully! A verification code has been sent to ${email}`);
-        setAlertType('success');
-        setAlertVisible(true);
+        setSuccessMessage(`Account created successfully! A verification code has been sent to ${email}`);
+        
+        // Redirect to verification page after a short delay
+        setTimeout(() => {
+          router.replace({
+            pathname: '/auth/verify-email',
+            params: { email }
+          });
+        }, 2000);
       } else {
-        throw new Error(response.message || 'Registration failed. Please try again.');
+        setLocalError(response.message || 'Registration failed. Please try again.');
       }
     } catch (error) {
-      console.log('Register error:', error);
-      
-      // Show error in alert modal
-      setAlertTitle('Registration Error');
-      setAlertMessage(`${error instanceof Error ? error.message : 'Something went wrong'}. Please try again.`);
-      setAlertType('error');
-      setAlertVisible(true);
+      setLocalError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
     }
   };
+
+  // Reset error and success state when screen loses focus
+  useFocusEffect(
+    useCallback(() => {
+      // When screen comes into focus
+      
+      return () => {
+        // When screen loses focus
+        setLocalError(null);
+        setSuccessMessage(null);
+        clearError();
+      };
+    }, [clearError])
+  );
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
@@ -84,9 +91,15 @@ export default function RegisterScreen() {
             </View>
 
             <View style={styles.form}>
-              {(error || validationError) && (
-                <AuthError message={error || validationError} />
+              {/* Show success message */}
+              {successMessage && (
+                <View style={styles.successContainer}>
+                  <ThemedText style={styles.successText}>{successMessage}</ThemedText>
+                </View>
               )}
+
+              {/* Show error message */}
+              {(error || localError) && <AuthError message={error || localError} />}
 
               <AuthInput
                 placeholder="Full Name"
@@ -94,7 +107,7 @@ export default function RegisterScreen() {
                 onChangeText={(text) => {
                   setName(text);
                   clearError();
-                  setValidationError(null);
+                  setLocalError(null);
                 }}
                 autoCapitalize="words"
               />
@@ -105,7 +118,7 @@ export default function RegisterScreen() {
                 onChangeText={(text) => {
                   setEmail(text);
                   clearError();
-                  setValidationError(null);
+                  setLocalError(null);
                 }}
                 keyboardType="email-address"
               />
@@ -116,7 +129,7 @@ export default function RegisterScreen() {
                 onChangeText={(text) => {
                   setPassword(text);
                   clearError();
-                  setValidationError(null);
+                  setLocalError(null);
                 }}
                 secureTextEntry
               />
@@ -127,7 +140,7 @@ export default function RegisterScreen() {
                 onChangeText={(text) => {
                   setConfirmPassword(text);
                   clearError();
-                  setValidationError(null);
+                  setLocalError(null);
                 }}
                 secureTextEntry
               />
@@ -136,7 +149,7 @@ export default function RegisterScreen() {
                 title="Register"
                 onPress={handleRegister}
                 isLoading={isLoading}
-                disabled={!name || !email || !password || !confirmPassword}
+                disabled={!name || !email || !password || !confirmPassword || isLoading}
               />
 
               <View style={styles.loginContainer}>
@@ -149,26 +162,6 @@ export default function RegisterScreen() {
           </ThemedView>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Alert Modal for displaying messages */}
-      <AlertModal
-        visible={alertVisible}
-        title={alertTitle}
-        message={alertMessage}
-        type={alertType}
-        onClose={() => {
-          setAlertVisible(false);
-          clearError();
-          
-          // Only navigate to verification on success
-          if (alertType === 'success') {
-            router.replace({
-              pathname: '/auth/verify-email',
-              params: { email }
-            });
-          }
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -201,5 +194,16 @@ const styles = StyleSheet.create({
   loginText: {
     color: '#0a7ea4',
     fontWeight: 'bold',
+  },
+  successContainer: {
+    backgroundColor: '#E8F5E9',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  successText: {
+    color: '#2E7D32',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -14,6 +14,16 @@ export default function ForgotPasswordScreen() {
   
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // Reset states when screen loses focus
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setIsSubmitted(false);
+        clearError();
+      };
+    }, [clearError])
+  );
 
   const handleSubmit = async () => {
     if (!email) return;

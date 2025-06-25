@@ -42,6 +42,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [authSession, setAuthSession] = useState<CustomAuthSession | null>(null);
+  // Add a state to track if we're in an error state
+  const [isErrorState, setIsErrorState] = useState(false);
 
   // Check if the user is authenticated on app start
   useEffect(() => {
@@ -101,7 +103,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => clearTimeout(timer);
   }, [authSession]);
 
-  const clearError = useCallback(() => setError(null), []);
+  // Improved error handling
+  const handleError = useCallback((err: any, defaultMsg: string) => {
+    let errorMessage = defaultMsg;
+    if (typeof err === 'object' && err !== null && 'message' in err) {
+      errorMessage = String(err.message);
+    } else if (typeof err === 'string') {
+      errorMessage = err;
+    }
+    setError(errorMessage);
+    setIsErrorState(true);
+    return errorMessage;
+  }, []);
+
+  // Clear both error and error state
+  const clearError = useCallback(() => {
+    setError(null);
+    setIsErrorState(false);
+  }, []);
 
   const handleLogout = async () => {
     await storage.clearAll();
@@ -110,7 +129,50 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setAuthSession(null);
   };
 
-  // Register a new user
+  // Simplified login function
+  const login = useCallback(async (email: string, password: string): Promise<AuthResponse> => {
+    setIsLoading(true);
+    
+    try {
+      const response = await authApi.login(email, password);
+      
+      // If successful, update auth state
+      if (response.success) {
+        // Save token
+        await storage.saveToken(response.token || '');
+        
+        // Save user data
+        if (response.user) {
+          setUser(response.user);
+          await storage.saveUser(response.user);
+        }
+        
+        // Set auth token for API calls
+        if (response.token) {
+          setAuthToken(response.token);
+          
+          setAuthSession({
+            accessToken: response.token,
+            expiresIn: 30 * 24 * 60 * 60,
+            issuedAt: Date.now(),
+          });
+        }
+      }
+      
+      return response;
+    } catch (error) {
+      // Handle error and return formatted response
+      console.log('Login error:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Login failed'
+      };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Register a new user - improve error handling
   const register = useCallback(async (name: string, email: string, password: string): Promise<AuthResponse> => {
     setIsLoading(true);
     setError(null);
@@ -136,55 +198,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Save email specifically for verification
       await storage.saveEmailToVerify(email);
-      console.log("Email saved for verification:", email);
       
       return response;
     } catch (err) {
-      const errorMessage = typeof err === 'string' ? err : 'Registration failed. Please try again.';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Login user
-  const login = useCallback(async (email: string, password: string): Promise<AuthResponse> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // Generate a session state for security
-      const state = await storage.generateSessionState();
-      
-      const response = await authApi.login(email, password);
-      console.log(response);
-      
-      await storage.saveToken(response.token || '');
-      if (response.user) {
-        await storage.saveUser(response.user);
-        setUser(response.user);
-      }
-      
-      if (response.token) {
-        setAuthToken(response.token);
-        
-        // Create a custom auth session object
-        setAuthSession({
-          accessToken: response.token,
-          expiresIn: 30 * 24 * 60 * 60, // 30 days in seconds
-          issuedAt: Date.now(),
-        });
-      }
-      
-      return response;
-    } catch (err) {
-      const errorMessage = typeof err === 'string' ? err : 'Login failed. Please check your credentials.';
-      setError(errorMessage);
+      // Improved error message handling
+      const errorMessage = handleError(err, 'Registration failed. Please try again.');
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [handleError]);
 
   // Verify email with OTP
   const verifyEmail = useCallback(async (email: string, otp: string): Promise<AuthResponse> => {
@@ -218,13 +241,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       return response;
     } catch (err) {
-      const errorMessage = typeof err === 'string' ? err : 'Email verification failed. Please try again.';
-      setError(errorMessage);
+      // Improved error message handling
+      const errorMessage = handleError(err, 'Email verification failed. Please try again.');
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [handleError]);
 
   // Forgot password
   const forgotPassword = useCallback(async (email: string): Promise<GeneralResponse> => {
@@ -298,6 +321,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     user,
     isLoading,
     isAuthenticated: !!user && !!authSession,
+    isErrorState,
     login,
     register,
     logout,
@@ -311,6 +335,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     user, 
     isLoading,
     authSession,
+    isErrorState,
     login, 
     register, 
     logout, 
