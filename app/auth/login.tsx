@@ -1,154 +1,267 @@
-import { useRouter, useFocusEffect } from 'expo-router';
-import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { AuthInput, AuthButton, AuthError } from '@/components/AuthComponents';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { useAuth } from '@/context/AuthContext';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import CustomAlert from '../../components/CustomAlert';
 
 export default function LoginScreen() {
-  const router = useRouter();
-  const { login, clearError, isLoading } = useAuth();
-  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'info',
+    onConfirm: () => {},
+  });
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-  // Reset error state when screen gains/loses focus
-  useFocusEffect(
-    useCallback(() => {
-      // When screen comes into focus
-      return () => {
-        // When screen loses focus
-        setLocalError(null);
-        clearError();
-      };
-    }, [clearError])
-  );
+  const { login } = useAuth();
+  const router = useRouter();
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info', onConfirm?: () => void) => {
+    setAlertConfig({
+      title,
+      message,
+      type,
+      onConfirm: onConfirm || (() => setAlertVisible(false)),
+    });
+    setAlertVisible(true);
+  };
+
+  const validateForm = () => {
+    const newErrors: { email?: string; password?: string } = {};
+
+    if (!email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = 'Please enter a valid email';
+    }
+
+    if (!password) {
+      newErrors.password = 'Password is required';
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleLogin = async () => {
-    // Simple validation
-    if (!email || !password) {
-      setLocalError('Please enter both email and password');
-      return;
-    }
-    
-    // Clear previous errors
-    setLocalError(null);
-    
+    if (!validateForm()) return;
+
+    setLoading(true);
     try {
-      // Call login function from auth context
       const result = await login(email, password);
       
       if (result.success) {
-        // Success - redirect to home page
+        // Check if onboarding is completed
         router.replace('/(tabs)');
       } else {
-        // Error from server - show error message
-        setLocalError(result.message || 'Invalid email or password');
+        showAlert('Login Failed', result.message || 'Please check your credentials', 'error');
       }
     } catch (error) {
-      // Network or other error
-      setLocalError(error instanceof Error ? error.message : 'Failed to connect to server');
+      showAlert('Error', 'Something went wrong. Please try again.', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ThemedView style={styles.container}>
-          <View style={styles.header}>
-            <ThemedText type="title">Welcome Back</ThemedText>
-            <ThemedText style={styles.subtitle}>Sign in to continue</ThemedText>
-          </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Sign in to your account</Text>
+        </View>
 
-          <View style={styles.form}>
-            {/* Display error messages directly in the UI */}
-            {localError && <AuthError message={localError} />}
-
-            <AuthInput
+        <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, errors.email && styles.inputError]}
               placeholder="Email"
               value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                setLocalError(null);
-              }}
+              onChangeText={setEmail}
               keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
             />
+          </View>
+          {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
-            <AuthInput
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, errors.password && styles.inputError]}
               placeholder="Password"
               value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setLocalError(null);
-              }}
-              secureTextEntry
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
             />
-
             <TouchableOpacity
-              onPress={() => router.push('/auth/forgot-password')}
-              style={styles.forgotPasswordContainer}
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
             >
-              <ThemedText style={styles.forgotPasswordText}>Forgot Password?</ThemedText>
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color="#666"
+              />
             </TouchableOpacity>
-
-            <AuthButton
-              title="Login"
-              onPress={handleLogin}
-              isLoading={isLoading}
-              disabled={isLoading}
-            />
-
-            <View style={styles.signupContainer}>
-              <ThemedText>Don't have an account? </ThemedText>
-              <TouchableOpacity onPress={() => router.push('/auth/register')}>
-                <ThemedText style={styles.signupText}>Sign Up</ThemedText>
-              </TouchableOpacity>
-            </View>
           </View>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+
+          <TouchableOpacity
+            style={styles.forgotPassword}
+            onPress={() => router.push('/auth/forgot-password')}
+          >
+            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? 'Signing In...' : 'Sign In'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/auth/register')}>
+              <Text style={styles.linkText}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertVisible(false)}
+        onConfirm={alertConfig.onConfirm}
+      />
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: '#fff',
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   header: {
-    marginTop: 50,
-    marginBottom: 30,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    opacity: 0.7,
-    marginTop: 5,
+    color: '#666',
   },
   form: {
-    width: '100%',
+    flex: 1,
   },
-  forgotPasswordContainer: {
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    height: 50,
+    fontSize: 16,
+    color: '#333',
+  },
+  inputError: {
+    borderColor: '#ff6b6b',
+  },
+  eyeIcon: {
+    padding: 8,
+  },
+  errorText: {
+    color: '#ff6b6b',
+    fontSize: 14,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
+  forgotPassword: {
     alignSelf: 'flex-end',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   forgotPasswordText: {
-    color: '#0a7ea4',
+    color: '#007AFF',
+    fontSize: 14,
   },
-  signupContainer: {
+  button: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 20,
+    alignItems: 'center',
   },
-  signupText: {
-    color: '#0a7ea4',
-    fontWeight: 'bold',
+  footerText: {
+    color: '#666',
+    fontSize: 14,
   },
-});
+  linkText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+}); 

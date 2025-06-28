@@ -1,355 +1,393 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
-import { Platform } from 'react-native';
-import { authApi, setAuthToken } from '../api/authApi';
-import storage from '../utils/storage';
-import { AuthResponse, GeneralResponse, ProfileResponse, UserData } from '../types/api';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_URL from '../constants/Api';
 
-// Register for native redirects
-if (Platform.OS !== 'web') {
-  WebBrowser.maybeCompleteAuthSession();
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  isVerified: boolean;
+  profilePicture?: string;
+  language?: string;
+  categories?: string[];
+  locations?: string[];
+  bookmarks?: string[];
 }
 
-// Create a custom auth session result type that matches our needs
-interface CustomAuthSession {
-  accessToken: string;
-  expiresIn: number;
-  issuedAt: number;
+interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
 }
 
-interface AuthContextProps {
-  user: UserData | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
+interface AuthResponse {
+  success: boolean;
+  message?: string;
+  token?: string;
+  user?: User;
+}
+
+interface OnboardingData {
+  language: string;
+  categories: string[];
+  locations: string[];
+}
+
+interface News {
+  _id: string;
+  headline: string;
+  summary: {
+    en: { audio: string, text: string },
+    hi: { audio: string, text: string },
+    hi_en: { audio: string, text: string }
+  };
+  date: string;
+  country: string;
+  state: string;
+  city_town: string;
+  genre: string;
+  keywords: string;
+  url: string;
+  img: string;
+  createdAt: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  loading: boolean;
+  isOnboardingCompleted: boolean;
+  pendingEmail: string | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
-  register: (name: string, email: string, password: string) => Promise<AuthResponse>;
-  logout: () => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<AuthResponse>;
   verifyEmail: (email: string, otp: string) => Promise<AuthResponse>;
-  forgotPassword: (email: string) => Promise<GeneralResponse>;
-  resetPassword: (email: string, otp: string, newPassword: string) => Promise<GeneralResponse>;
-  updateProfile: (data: { name?: string; profilePicture?: string }) => Promise<ProfileResponse>;
-  error: string | null;
-  clearError: () => void;
+  forgotPassword: (email: string) => Promise<AuthResponse>;
+  resetPassword: (email: string, otp: string, newPassword: string) => Promise<AuthResponse>;
+  saveOnboarding: (data: OnboardingData) => Promise<AuthResponse>;
+  getOnboardingStatus: () => Promise<{ completed: boolean; data?: OnboardingData }>;
+  logout: () => Promise<void>;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  setToken: React.Dispatch<React.SetStateAction<string | null>>;
+  setPendingEmail: React.Dispatch<React.SetStateAction<string | null>>;
+  getBookmarks: () => Promise<{ success: boolean; bookmarks?: News[]; message?: string }>;
+  addBookmark: (newsId: string) => Promise<{ success: boolean; message?: string }>;
+  removeBookmark: (newsId: string) => Promise<{ success: boolean; message?: string }>;
+  isBookmarked: (newsId: string) => boolean;
 }
 
-const AuthContext = createContext<AuthContextProps>({} as AuthContextProps);
-
-export const useAuth = () => useContext(AuthContext);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<UserData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [authSession, setAuthSession] = useState<CustomAuthSession | null>(null);
-  // Add a state to track if we're in an error state
-  const [isErrorState, setIsErrorState] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isOnboardingCompleted, setIsOnboardingCompleted] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
-  // Check if the user is authenticated on app start
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        setIsLoading(true);
-        const token = await storage.getToken();
-        const userData = await storage.getUser();
+    loadStoredAuth();
+  }, []);
 
-        if (token && userData) {
-          setAuthToken(token);
-          setUser(userData);
-          
-          // Create a custom auth session object
-          setAuthSession({
-            accessToken: token,
-            expiresIn: 30 * 24 * 60 * 60, // 30 days in seconds
-            issuedAt: Date.now(),
-          });
+  const loadStoredAuth = async () => {
+    try {
+      const storedToken = await AsyncStorage.getItem('token');
+      const storedUser = await AsyncStorage.getItem('user');
+      const onboardingStatus = await AsyncStorage.getItem('onboardingCompleted');
+      const storedPendingEmail = await AsyncStorage.getItem('pendingEmail');
 
-          try {
-            await authApi.getProfile();
-          } catch (err) {
-            console.log('Token expired or invalid, logging out');
-            await handleLogout();
-          }
-        }
-      } catch (error) {
-        console.error('Loading user error:', error);
-      } finally {
-        setIsLoading(false);
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+        setIsOnboardingCompleted(onboardingStatus === 'true');
       }
-    };
-
-    loadUser();
-  }, []);
-
-  // Handle session expiry
-  useEffect(() => {
-    if (!authSession) return;
-    
-    const expirationTime = authSession.issuedAt + (authSession.expiresIn * 1000);
-    const now = Date.now();
-    const expiryTime = expirationTime - now;
-    
-    if (expiryTime <= 0) {
-      // Session already expired
-      handleLogout();
-      return;
+      
+      if (storedPendingEmail) {
+        setPendingEmail(storedPendingEmail);
+      }
+    } catch (error) {
+      console.error('Error loading stored auth:', error);
+    } finally {
+      setLoading(false);
     }
-    
-    // Set a timer to logout when the session expires
-    const timer = setTimeout(() => {
-      handleLogout();
-    }, expiryTime);
-    
-    return () => clearTimeout(timer);
-  }, [authSession]);
-
-  // Improved error handling
-  const handleError = useCallback((err: any, defaultMsg: string) => {
-    let errorMessage = defaultMsg;
-    if (typeof err === 'object' && err !== null && 'message' in err) {
-      errorMessage = String(err.message);
-    } else if (typeof err === 'string') {
-      errorMessage = err;
-    }
-    setError(errorMessage);
-    setIsErrorState(true);
-    return errorMessage;
-  }, []);
-
-  // Clear both error and error state
-  const clearError = useCallback(() => {
-    setError(null);
-    setIsErrorState(false);
-  }, []);
-
-  const handleLogout = async () => {
-    await storage.clearAll();
-    setAuthToken(null);
-    setUser(null);
-    setAuthSession(null);
   };
 
-  // Simplified login function
-  const login = useCallback(async (email: string, password: string): Promise<AuthResponse> => {
-    setIsLoading(true);
-    
+  const makeRequest = async (endpoint: string, options: RequestInit = {}): Promise<any> => {
+    const url = `${API_URL}/api/auth${endpoint}`;
+    const config: RequestInit = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    };
+
+    if (token) {
+      config.headers = {
+        ...config.headers,
+        Authorization: `Bearer ${token}`,
+      };
+    }
+
     try {
-      const response = await authApi.login(email, password);
+      const response = await fetch(url, config);
+      const data = await response.json();
       
-      // If successful, update auth state
+      if (!response.ok) {
+        throw new Error(data.message || 'Request failed');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('API request failed:', error);
+      throw error;
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<AuthResponse> => {
+    try {
+      const data = await makeRequest('/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (data.success && data.token) {
+        await AsyncStorage.setItem('token', data.token);
+        await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        setToken(data.token);
+        setUser(data.user);
+      }
+
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Login failed',
+      };
+    }
+  };
+
+  const register = async (payload: RegisterPayload): Promise<AuthResponse> => {
+    try {
+      const data = await makeRequest('/register', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (data.success) {
+        // Store the email for OTP verification
+        setPendingEmail(payload.email);
+        await AsyncStorage.setItem('pendingEmail', payload.email);
+      }
+
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Registration failed',
+      };
+    }
+  };
+
+  const verifyEmail = async (email: string, otp: string): Promise<AuthResponse> => {
+    try {
+      const data = await makeRequest('/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp }),
+      });
+
+      if (data.success && data.token) {
+        await AsyncStorage.setItem('token', data.token);
+        await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        // Clear pending email after successful verification
+        setPendingEmail(null);
+        await AsyncStorage.removeItem('pendingEmail');
+        setToken(data.token);
+        setUser(data.user);
+      }
+
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Email verification failed',
+      };
+    }
+  };
+
+  const forgotPassword = async (email: string): Promise<AuthResponse> => {
+    try {
+      const data = await makeRequest('/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Forgot password request failed',
+      };
+    }
+  };
+
+  const resetPassword = async (email: string, otp: string, newPassword: string): Promise<AuthResponse> => {
+    try {
+      const data = await makeRequest('/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp, newPassword }),
+      });
+
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Password reset failed',
+      };
+    }
+  };
+
+  const saveOnboarding = async (data: OnboardingData): Promise<AuthResponse> => {
+    try {
+      const response = await makeRequest('/onboarding', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+
       if (response.success) {
-        // Save token
-        await storage.saveToken(response.token || '');
+        await AsyncStorage.setItem('onboardingCompleted', 'true');
+        setIsOnboardingCompleted(true);
         
-        // Save user data
-        if (response.user) {
-          setUser(response.user);
-          await storage.saveUser(response.user);
+        // Update user data with onboarding info
+        if (user) {
+          const updatedUser = { ...user, ...data };
+          setUser(updatedUser);
+          await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
         }
-        
-        // Set auth token for API calls
-        if (response.token) {
-          setAuthToken(response.token);
-          
-          setAuthSession({
-            accessToken: response.token,
-            expiresIn: 30 * 24 * 60 * 60,
-            issuedAt: Date.now(),
-          });
-        }
+      }
+
+      return response;
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to save onboarding data',
+      };
+    }
+  };
+
+  const getOnboardingStatus = async (): Promise<{ completed: boolean; data?: OnboardingData }> => {
+    try {
+      const response = await makeRequest('/onboarding');
+      return {
+        completed: response.completed,
+        data: response.onboarding,
+      };
+    } catch (error) {
+      return { completed: false };
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user');
+      await AsyncStorage.removeItem('onboardingCompleted');
+      await AsyncStorage.removeItem('pendingEmail');
+      setToken(null);
+      setUser(null);
+      setIsOnboardingCompleted(false);
+      setPendingEmail(null);
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
+  };
+
+  const getBookmarks = async (): Promise<{ success: boolean; bookmarks?: News[]; message?: string }> => {
+    try {
+      const response = await makeRequest('/bookmarks');
+      return response;
+    } catch (error) {
+      return { success: false };
+    }
+  };
+
+  const addBookmark = async (newsId: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const response = await makeRequest('/bookmarks', {
+        method: 'POST',
+        body: JSON.stringify({ newsId }),
+      });
+      
+      if (response.success && user) {
+        // Update local user state to include the new bookmark
+        const updatedUser = { ...user, bookmarks: [...(user.bookmarks || []), newsId] };
+        setUser(updatedUser);
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
       }
       
       return response;
     } catch (error) {
-      // Handle error and return formatted response
-      console.log('Login error:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Login failed'
-      };
-    } finally {
-      setIsLoading(false);
+      return { success: false };
     }
-  }, []);
+  };
 
-  // Register a new user - improve error handling
-  const register = useCallback(async (name: string, email: string, password: string): Promise<AuthResponse> => {
-    setIsLoading(true);
-    setError(null);
+  const removeBookmark = async (newsId: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      // Generate a session state for security
-      const state = await storage.generateSessionState();
+      const response = await makeRequest(`/bookmarks/${newsId}`, {
+        method: 'DELETE',
+      });
       
-      const response = await authApi.register(name, email, password);
-      
-      if (!response || !response.user) {
-        throw new Error('Invalid response from server');
-      }
-      
-      const userData = {
-        id: response.user.id,
-        name: response.user.name,
-        email: response.user.email,
-        isVerified: response.user.isVerified,
-      };
-      
-      setUser(userData);
-      await storage.saveUser(userData);
-      
-      // Save email specifically for verification
-      await storage.saveEmailToVerify(email);
-      
-      return response;
-    } catch (err) {
-      // Improved error message handling
-      const errorMessage = handleError(err, 'Registration failed. Please try again.');
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [handleError]);
-
-  // Verify email with OTP
-  const verifyEmail = useCallback(async (email: string, otp: string): Promise<AuthResponse> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await authApi.verifyEmail(email, otp);
-      
-      if (response && response.success) {
-        if (response.token) {
-          await storage.saveToken(response.token);
-          setAuthToken(response.token);
-        }
-        
-        if (response.user) {
-          await storage.saveUser(response.user);
-          setUser(response.user);
-        }
-        
-        await storage.removeEmailToVerify(); // Clean up email from storage
-        
-        // Create a custom auth session object
-        if (response.token) {
-          setAuthSession({
-            accessToken: response.token,
-            expiresIn: 30 * 24 * 60 * 60, // 30 days in seconds
-            issuedAt: Date.now(),
-          });
-        }
+      if (response.success && user) {
+        // Update local user state to remove the bookmark
+        const updatedUser = { 
+          ...user, 
+          bookmarks: (user.bookmarks || []).filter(id => id !== newsId) 
+        };
+        setUser(updatedUser);
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
       }
       
       return response;
-    } catch (err) {
-      // Improved error message handling
-      const errorMessage = handleError(err, 'Email verification failed. Please try again.');
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      return { success: false };
     }
-  }, [handleError]);
+  };
 
-  // Forgot password
-  const forgotPassword = useCallback(async (email: string): Promise<GeneralResponse> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await authApi.forgotPassword(email);
-      return response;
-    } catch (err) {
-      const errorMessage = typeof err === 'string' ? err : 'Failed to request password reset. Please try again.';
-      setError(errorMessage);
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Reset password
-  const resetPassword = useCallback(async (email: string, otp: string, newPassword: string): Promise<GeneralResponse> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await authApi.resetPassword(email, otp, newPassword);
-      return response;
-    } catch (err) {
-      const errorMessage = typeof err === 'string' ? err : 'Password reset failed. Please try again.';
-      setError(errorMessage);
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Update user profile
-  const updateProfile = useCallback(async (data: { name?: string; profilePicture?: string }): Promise<ProfileResponse> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await authApi.updateProfile(data);
-      
-      // Update user in storage and state
-      if (response.user) {
-        await storage.saveUser(response.user);
-        setUser(response.user);
-      }
-      
-      return response;
-    } catch (err) {
-      const errorMessage = typeof err === 'string' ? err : 'Failed to update profile. Please try again.';
-      setError(errorMessage);
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Logout user
-  const logout = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await handleLogout();
-    } catch (err) {
-      console.error('Logout error:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = React.useMemo(() => ({
-    user,
-    isLoading,
-    isAuthenticated: !!user && !!authSession,
-    isErrorState,
-    login,
-    register,
-    logout,
-    verifyEmail,
-    forgotPassword,
-    resetPassword,
-    updateProfile,
-    error,
-    clearError,
-  }), [
-    user, 
-    isLoading,
-    authSession,
-    isErrorState,
-    login, 
-    register, 
-    logout, 
-    verifyEmail, 
-    forgotPassword, 
-    resetPassword, 
-    updateProfile, 
-    error, 
-    clearError
-  ]);
+  const isBookmarked = (newsId: string): boolean => {
+    return user?.bookmarks?.includes(newsId) || false;
+  };
 
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={{
+      user,
+      token,
+      loading,
+      isOnboardingCompleted,
+      pendingEmail,
+      login,
+      register,
+      verifyEmail,
+      forgotPassword,
+      resetPassword,
+      saveOnboarding,
+      getOnboardingStatus,
+      logout,
+      setUser,
+      setToken,
+      setPendingEmail,
+      getBookmarks,
+      addBookmark,
+      removeBookmark,
+      isBookmarked,
+    }}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };

@@ -1,191 +1,186 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  SafeAreaView,
+} from 'react-native';
+import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import CustomAlert from '../../components/CustomAlert';
 
-import { AuthInput, AuthButton, AuthError } from '@/components/AuthComponents';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { useAuth } from '@/context/AuthContext';
-import { AlertModal } from '@/components/AlertModal';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-
-export default function ProfileTab() {
+export default function ProfileScreen() {
+  const { user, logout } = useAuth();
   const router = useRouter();
-  const { user, updateProfile, logout, error, clearError, isLoading } = useAuth();
-  
-  const [name, setName] = useState(user?.name || '');
-  const [isEditing, setIsEditing] = useState(false);
   const [alertVisible, setAlertVisible] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertTitle, setAlertTitle] = useState('');
-  const [alertType, setAlertType] = useState<'error' | 'success' | 'warning' | 'info'>('info');
+  const [alertConfig, setAlertConfig] = useState({
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'info',
+    onConfirm: () => {},
+    showCancel: false,
+  });
 
-  const handleUpdateProfile = async () => {
-    if (!name) {
-      setAlertTitle('Validation Error');
-      setAlertMessage('Name cannot be empty');
-      setAlertType('warning');
-      setAlertVisible(true);
-      return;
-    }
-    
-    try {
-      const response = await updateProfile({ name });
-      
-      if (response && response.success) {
-        setAlertTitle('Success');
-        setAlertMessage('Profile updated successfully!');
-        setAlertType('success');
-        setAlertVisible(true);
-        setIsEditing(false);
-      } else {
-        throw new Error(response.message || 'Failed to update profile. Please try again.');
-      }
-    } catch (error) {
-      console.log('Update profile error:', error);
-      setAlertTitle('Update Error');
-      setAlertMessage(`Failed to update profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setAlertType('error');
-      setAlertVisible(true);
-    }
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info', onConfirm?: () => void, showCancel = false) => {
+    setAlertConfig({
+      title,
+      message,
+      type,
+      onConfirm: onConfirm || (() => setAlertVisible(false)),
+      showCancel,
+    });
+    setAlertVisible(true);
   };
 
-  const handleLogout = async () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to logout?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Logout", 
-          style: "destructive",
-          onPress: async () => {
-            await logout();
-            router.replace('/auth/login');
-          }
-        }
-      ]
+  const handleLogout = () => {
+    showAlert(
+      'Logout',
+      'Are you sure you want to logout?',
+      'info',
+      () => {
+        setAlertVisible(false);
+        logout();
+      },
+      true
     );
   };
 
-  if (!user) {
-    return null;
-  }
+  const menuItems = [
+    {
+      id: 'preferences',
+      title: 'Preferences',
+      icon: 'settings-outline',
+      onPress: () => {
+        showAlert('Coming Soon', 'Preferences screen will be available soon!', 'info');
+      },
+    },
+    {
+      id: 'bookmarks',
+      title: 'Bookmarks',
+      icon: 'bookmark-outline',
+      onPress: () => {
+        router.push('/(tabs)/explore');
+      },
+    },
+    {
+      id: 'notifications',
+      title: 'Notifications',
+      icon: 'notifications-outline',
+      onPress: () => {
+        showAlert('Coming Soon', 'Notifications settings will be available soon!', 'info');
+      },
+    },
+    {
+      id: 'help',
+      title: 'Help & Support',
+      icon: 'help-circle-outline',
+      onPress: () => {
+        showAlert('Help & Support', 'Contact us at support@dokit.com', 'info');
+      },
+    },
+    {
+      id: 'about',
+      title: 'About',
+      icon: 'information-circle-outline',
+      onPress: () => {
+        showAlert('About Dokit', 'Version 1.0.0\nYour personalized news companion', 'info');
+      },
+    },
+  ];
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView>
-          <ThemedView style={styles.container}>
-            <View style={styles.header}>
-              <ThemedText type="title">Your Profile</ThemedText>
-              <TouchableOpacity 
-                style={styles.logoutButton} 
-                onPress={handleLogout}
-              >
-                <IconSymbol name="rectangle.portrait.and.arrow.right" color="#D32F2F" size={24} />
-              </TouchableOpacity>
-            </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Profile</Text>
+        </View>
 
-            <View style={styles.profileContainer}>
-              <View style={styles.avatarContainer}>
-                {user.profilePicture ? (
-                  <Image
-                    source={{ uri: user.profilePicture }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <ThemedText style={styles.avatarInitial}>
-                      {user.name ? user.name[0].toUpperCase() : 'U'}
-                    </ThemedText>
-                  </View>
-                )}
+        {/* User Info */}
+        <View style={styles.userSection}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={40} color="#fff" />
+            </View>
+          </View>
+          <Text style={styles.userName}>{user?.name || 'User'}</Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+          <View style={styles.verificationBadge}>
+            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+            <Text style={styles.verificationText}>Verified Account</Text>
+          </View>
+        </View>
+
+        {/* User Preferences Summary */}
+        {user?.language && (
+          <View style={styles.preferencesSection}>
+            <Text style={styles.sectionTitle}>Your Preferences</Text>
+            <View style={styles.preferencesGrid}>
+              <View style={styles.preferenceItem}>
+                <Ionicons name="language-outline" size={20} color="#007AFF" />
+                <Text style={styles.preferenceText}>
+                  Language: {user.language.toUpperCase()}
+                </Text>
               </View>
-
-              <ThemedText style={styles.userName}>{user.name}</ThemedText>
-              <ThemedText style={styles.email}>{user.email}</ThemedText>
-            </View>
-
-            <View style={styles.form}>
-              {error && <AuthError message={error} />}
-
-              {isEditing ? (
-                <>
-                  <ThemedText style={styles.fieldLabel}>Full Name</ThemedText>
-                  <AuthInput
-                    placeholder="Full Name"
-                    value={name}
-                    onChangeText={(text) => {
-                      setName(text);
-                      clearError();
-                    }}
-                    autoCapitalize="words"
-                  />
-
-                  <View style={styles.buttonRow}>
-                    <AuthButton
-                      title="Cancel"
-                      onPress={() => {
-                        setName(user.name || '');
-                        setIsEditing(false);
-                      }}
-                      type="secondary"
-                    />
-                    <AuthButton
-                      title="Save Changes"
-                      onPress={handleUpdateProfile}
-                      isLoading={isLoading}
-                      disabled={!name || name === user.name}
-                    />
-                  </View>
-                </>
-              ) : (
-                <AuthButton
-                  title="Edit Profile"
-                  onPress={() => setIsEditing(true)}
-                  type="secondary"
-                />
+              {user?.categories && user.categories.length > 0 && (
+                <View style={styles.preferenceItem}>
+                  <Ionicons name="list-outline" size={20} color="#007AFF" />
+                  <Text style={styles.preferenceText}>
+                    {user.categories.length} Categor{user.categories.length > 1 ? 'ies' : 'y'}
+                  </Text>
+                </View>
               )}
-
-              <View style={styles.infoSection}>
-                <ThemedText style={styles.sectionTitle}>Account Information</ThemedText>
-                
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Email:</ThemedText>
-                  <ThemedText style={styles.infoValue}>{user.email}</ThemedText>
+              {user?.locations && user.locations.length > 0 && (
+                <View style={styles.preferenceItem}>
+                  <Ionicons name="location-outline" size={20} color="#007AFF" />
+                  <Text style={styles.preferenceText}>
+                    {user.locations.length} Location{user.locations.length > 1 ? 's' : ''}
+                  </Text>
                 </View>
-                
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Status:</ThemedText>
-                  <ThemedText style={styles.infoValue}>
-                    {user.isVerified ? 'Verified ✓' : 'Not Verified'}
-                  </ThemedText>
-                </View>
-              </View>
+              )}
             </View>
-          </ThemedView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </View>
+        )}
 
-      {/* Alert Modal */}
-      <AlertModal
+        {/* Menu Items */}
+        <View style={styles.menuSection}>
+          {menuItems.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.menuItem}
+              onPress={item.onPress}
+            >
+              <View style={styles.menuItemLeft}>
+                <Ionicons name={item.icon as any} size={24} color="#666" />
+                <Text style={styles.menuItemTitle}>{item.title}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Logout Button */}
+        <View style={styles.logoutSection}>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={24} color="#ff6b6b" />
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      <CustomAlert
         visible={alertVisible}
-        title={alertTitle}
-        message={alertMessage}
-        type={alertType}
-        onClose={() => {
-          setAlertVisible(false);
-          clearError();
-        }}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertVisible(false)}
+        onConfirm={alertConfig.onConfirm}
+        showCancel={alertConfig.showCancel}
+        confirmText={alertConfig.showCancel ? 'Logout' : 'OK'}
+        cancelText="Cancel"
       />
     </SafeAreaView>
   );
@@ -194,91 +189,128 @@ export default function ProfileTab() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    minHeight: '100%',
+    backgroundColor: '#f8f9fa',
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
-    marginTop: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  userSection: {
+    backgroundColor: '#fff',
+    paddingVertical: 30,
+    alignItems: 'center',
     marginBottom: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  logoutButton: {
-    padding: 8,
-  },
-  profileContainer: {
-    alignItems: 'center',
-    marginBottom: 30,
   },
   avatarContainer: {
-    marginBottom: 15,
+    marginBottom: 16,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#0a7ea4',
-    justifyContent: 'center',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#007AFF',
     alignItems: 'center',
-  },
-  avatarInitial: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: '#fff',
+    justifyContent: 'center',
   },
   userName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
   },
-  email: {
+  userEmail: {
     fontSize: 16,
-    opacity: 0.7,
-    marginTop: 5,
+    color: '#666',
+    marginBottom: 8,
   },
-  form: {
-    width: '100%',
-  },
-  fieldLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 5,
-  },
-  buttonRow: {
+  verificationBadge: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
+    alignItems: 'center',
+    backgroundColor: '#e8f5e8',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  infoSection: {
-    marginTop: 30,
-    padding: 15,
-    backgroundColor: 'rgba(0,0,0,0.03)',
-    borderRadius: 10,
+  verificationText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  preferencesSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 16,
   },
-  infoRow: {
+  preferencesGrid: {
     flexDirection: 'row',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
+    justifyContent: 'space-around',
   },
-  infoLabel: {
+  preferenceItem: {
+    alignItems: 'center',
     flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
   },
-  infoValue: {
-    flex: 2,
+  preferenceText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  menuSection: {
+    backgroundColor: '#fff',
+    marginBottom: 20,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  menuItemTitle: {
     fontSize: 16,
+    color: '#333',
+    marginLeft: 16,
+  },
+  logoutSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  logoutText: {
+    fontSize: 16,
+    color: '#ff6b6b',
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

@@ -1,26 +1,29 @@
+import React, { useEffect } from 'react';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Slot, Stack, useRouter, SplashScreen, usePathname, useSegments } from 'expo-router';
+import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
-import { View, ActivityIndicator } from 'react-native';
 
-import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
+import LoadingScreen from '@/components/LoadingScreen';
+import NavigationGuard from '@/components/NavigationGuard';
 
-// Prevent splash screen from auto-hiding
+// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-function RootLayoutNav() {
+export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    ...FontAwesome.font,
   });
 
   useEffect(() => {
     if (loaded) {
-      // Hide the splash screen after the fonts have loaded
       SplashScreen.hideAsync();
     }
   }, [loaded]);
@@ -30,55 +33,97 @@ function RootLayoutNav() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <StatusBar style="auto" />
-      <AuthenticationGuard>
-        <Slot />
-      </AuthenticationGuard>
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <RootLayoutNav />
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
 
-// Authentication guard component
-function AuthenticationGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuth();
-  const pathname = usePathname();
-  const segments = useSegments();
-  const router = useRouter();
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
+  const { loading } = useAuth();
 
-  const isAuthGroup = segments[0] === 'auth';
-  const [isNavigating, setIsNavigating] = useState(false);
-  
-  useEffect(() => {
-    // Skip redirection if we're already in the auth group or we're loading
-    if (isLoading || isNavigating) return;
-    
-    const isLoginPage = pathname === '/auth/login';
-    
-    if (isAuthenticated) {
-      // If authenticated but on login page, redirect to home
-      if (isLoginPage && !isNavigating) {
-        setIsNavigating(true);
-        router.replace('/(tabs)');
-        setTimeout(() => setIsNavigating(false), 1000);
-      }
-    } else {
-      // If not authenticated and not on an auth page, redirect to login
-      if (!isAuthGroup && !isNavigating) {
-        setIsNavigating(true);
-        router.replace('/auth/login');
-        setTimeout(() => setIsNavigating(false), 1000);
-      }
-    }
-  }, [isAuthenticated, isLoading, pathname, isNavigating]);
+  if (loading) {
+    return <LoadingScreen message="Checking authentication..." />;
+  }
 
-  return <>{children}</>;
-}
-
-export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <NavigationGuard>
+      <StatusBar style="auto" />
+      <Stack>
+        {/* Authentication screens */}
+        <Stack.Screen
+          name="auth/welcome"
+          options={{
+            title: 'Welcome',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="auth/login"
+          options={{
+            title: 'Login',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="auth/register"
+          options={{
+            title: 'Register',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="auth/verify-email"
+          options={{
+            title: 'Verify Email',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="auth/forgot-password"
+          options={{
+            title: 'Forgot Password',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="auth/reset-password"
+          options={{
+            title: 'Reset Password',
+            headerShown: false,
+          }}
+        />
+
+        {/* Onboarding screens */}
+        <Stack.Screen
+          name="onboarding/language"
+          options={{
+            title: 'Select Language',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="onboarding/category"
+          options={{
+            title: 'Select Categories',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="onboarding/location"
+          options={{
+            title: 'Select Locations',
+            headerShown: false,
+          }}
+        />
+
+        {/* Main app screens */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+    </NavigationGuard>
   );
 }

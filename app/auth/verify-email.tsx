@@ -1,252 +1,285 @@
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { AuthInput, AuthButton, AuthError } from '@/components/AuthComponents';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { useAuth } from '@/context/AuthContext';
-import { authApi } from '@/api/authApi';
-import storage from '@/utils/storage';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import CustomAlert from '../../components/CustomAlert';
 
 export default function VerifyEmailScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams();
-  const { user, verifyEmail, error, clearError, isLoading, isAuthenticated } = useAuth();
-  
   const [otp, setOtp] = useState('');
-  const [resendLoading, setResendLoading] = useState(false);
-  const [emailToVerify, setEmailToVerify] = useState<string | null>(null);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'info',
+    onConfirm: () => {},
+  });
+  const [errors, setErrors] = useState<{ otp?: string }>({});
 
-  // Get email either from user object, params, or secure storage
-  useEffect(() => {
-    const loadEmail = async () => {
-      let email = null;
-      
-      // Try to get email from params
-      if (params.email && typeof params.email === 'string') {
-        email = params.email;
-      }
-      
-      // If not in params, try from user context
-      if (!email && user?.email) {
-        email = user.email;
-      }
-      
-      // If still not found, try from secure storage
-      if (!email) {
-        const storedEmail = await storage.getEmailToVerify();
-        if (storedEmail) {
-          email = storedEmail;
-        }
-      }
-      
-      if (email) {
-        setEmailToVerify(email);
-        await storage.saveEmailToVerify(email);
-      }
-      
-      // Redirect if user is already verified
-      if (user && user.isVerified) {
-        setSuccessMessage('Your email is already verified. Redirecting to home.');
-        setTimeout(() => router.replace('/(tabs)'), 2000);
-      }
-    };
-    
-    loadEmail();
-  }, [user, params]);
+  const { verifyEmail, pendingEmail } = useAuth();
+  const router = useRouter();
 
-  // Reset error and success state when screen loses focus
-  useFocusEffect(
-    useCallback(() => {
-      // When screen comes into focus
-      
-      return () => {
-        // When screen loses focus
-        setLocalError(null);
-        setSuccessMessage(null);
-        clearError();
-      };
-    }, [clearError])
-  );
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info', onConfirm?: () => void) => {
+    setAlertConfig({
+      title,
+      message,
+      type,
+      onConfirm: onConfirm || (() => setAlertVisible(false)),
+    });
+    setAlertVisible(true);
+  };
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-          <ThemedText>Loading...</ThemedText>
-        </ThemedView>
-      </SafeAreaView>
-    );
-  }
+  const validateForm = () => {
+    const newErrors: { otp?: string } = {};
 
-  // Ensure email is available for verification
-  if (!emailToVerify && !isLoading) {
-    return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="title">Email Verification</ThemedText>
-          <ThemedText style={styles.subtitle}>No email address found for verification</ThemedText>
-          
-          <AuthButton
-            title="Go to Login"
-            onPress={() => router.replace('/auth/login')}
-          />
-        </ThemedView>
-      </SafeAreaView>
-    );
-  }
-
-  const handleVerify = async () => {
     if (!otp) {
-      setLocalError('Please enter the verification code');
-      return;
+      newErrors.otp = 'OTP is required';
+    } else if (otp.length !== 6) {
+      newErrors.otp = 'OTP must be 6 digits';
     }
 
-    if (!emailToVerify) {
-      setLocalError('No email found. Please try logging in again.');
-      return;
-    }
-
-    setLocalError(null);
-    
-    try {
-      const response = await verifyEmail(emailToVerify, otp);
-      
-      if (response && response.success) {
-        setSuccessMessage('Email verification successful! You can now use all features.');
-        setTimeout(() => router.replace('/(tabs)'), 2000);
-      } else {
-        setLocalError(response.message || 'Verification failed. Please try again.');
-      }
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Invalid verification code. Please try again.');
-    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
-  const handleResendOTP = async () => {
-    if (!emailToVerify) {
-      setLocalError('No email found. Please try logging in again.');
+  const handleVerifyEmail = async () => {
+    if (!validateForm()) return;
+    if (!pendingEmail) {
+      showAlert('Error', 'Email not found. Please register again.', 'error');
       return;
     }
-    
-    setResendLoading(true);
-    setLocalError(null);
-    
+
+    setLoading(true);
     try {
-      const response = await authApi.forgotPassword(emailToVerify);
+      const result = await verifyEmail(pendingEmail, otp);
       
-      if (response && response.success) {
-        setSuccessMessage('A new verification code has been sent to your email');
-        
-        // Hide success message after 3 seconds
-        setTimeout(() => setSuccessMessage(null), 3000);
+      if (result.success) {
+        showAlert(
+          'Email Verified',
+          'Your email has been verified successfully!',
+          'success',
+          () => {
+            setAlertVisible(false);
+            router.replace('/onboarding/language' as any);
+          }
+        );
       } else {
-        setLocalError(response.message || 'Failed to send code. Please try again later.');
+        showAlert('Verification Failed', result.message || 'Please check your OTP', 'error');
       }
     } catch (error) {
-      setLocalError(`Failed to resend verification code: ${error instanceof Error ? error.message : 'Server error'}`);
+      showAlert('Error', 'Something went wrong. Please try again.', 'error');
     } finally {
-      setResendLoading(false);
+      setLoading(false);
     }
   };
+
+  const handleResendOTP = () => {
+    if (!pendingEmail) {
+      showAlert('Error', 'Email not found. Please register again.', 'error');
+      return;
+    }
+    // TODO: Implement resend OTP functionality
+    showAlert('Info', 'Resend OTP functionality will be available soon.', 'info');
+  };
+
+  // Redirect if no pending email
+  useEffect(() => {
+    if (!pendingEmail) {
+      router.replace('/auth/register' as any);
+    }
+  }, [pendingEmail, router]);
+
+  if (!pendingEmail) {
+    return null;
+  }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ThemedView style={styles.container}>
-          <View style={styles.header}>
-            <ThemedText type="title">Verify Email</ThemedText>
-            <ThemedText style={styles.subtitle}>
-              Enter the verification code sent to {emailToVerify}
-            </ThemedText>
-          </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.header}>
+          <Ionicons name="checkmark-circle-outline" size={80} color="#007AFF" style={styles.icon} />
+          <Text style={styles.title}>Verify Your Email</Text>
+          <Text style={styles.subtitle}>
+            We've sent a verification code to
+          </Text>
+          <Text style={styles.emailText}>{pendingEmail}</Text>
+        </View>
 
-          <View style={styles.form}>
-            {/* Show success message */}
-            {successMessage && (
-              <View style={styles.successContainer}>
-                <ThemedText style={styles.successText}>{successMessage}</ThemedText>
-              </View>
-            )}
-            
-            {/* Show error message */}
-            {(error || localError) && <AuthError message={error || localError} />}
-
-            <AuthInput
-              placeholder="Enter Verification Code"
+        <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <Ionicons name="key-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, errors.otp && styles.inputError]}
+              placeholder="Enter 6-digit OTP"
               value={otp}
-              onChangeText={(text) => {
-                setOtp(text);
-                clearError();
-                setLocalError(null);
-              }}
+              onChangeText={setOtp}
               keyboardType="numeric"
+              maxLength={6}
+              autoCapitalize="none"
             />
+          </View>
+          {errors.otp && <Text style={styles.errorText}>{errors.otp}</Text>}
 
-            <AuthButton
-              title="Verify Email"
-              onPress={handleVerify}
-              isLoading={isLoading}
-              disabled={!otp || isLoading}
-            />
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleVerifyEmail}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? 'Verifying...' : 'Verify Email'}
+            </Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.resendContainer} 
-              onPress={handleResendOTP}
-              disabled={resendLoading}
-            >
-              <ThemedText style={styles.resendText}>
-                {resendLoading ? 'Sending...' : "Didn't receive code? Resend"}
-              </ThemedText>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Didn't receive the code? </Text>
+            <TouchableOpacity onPress={handleResendOTP}>
+              <Text style={styles.linkText}>Resend</Text>
             </TouchableOpacity>
           </View>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={20} color="#666" />
+            <Text style={styles.backButtonText}>Back to Register</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertVisible(false)}
+        onConfirm={alertConfig.onConfirm}
+      />
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: '#fff',
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   header: {
-    marginTop: 50,
-    marginBottom: 30,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  icon: {
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    opacity: 0.7,
-    marginTop: 5,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  emailText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
   },
   form: {
-    width: '100%',
+    flex: 1,
   },
-  resendContainer: {
+  inputContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
   },
-  resendText: {
-    color: '#0a7ea4',
-    fontWeight: '500',
+  inputIcon: {
+    marginRight: 12,
   },
-  successContainer: {
-    backgroundColor: '#E8F5E9',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 16,
+  input: {
+    flex: 1,
+    height: 50,
+    fontSize: 16,
+    color: '#333',
   },
-  successText: {
-    color: '#2E7D32',
+  inputError: {
+    borderColor: '#ff6b6b',
+  },
+  errorText: {
+    color: '#ff6b6b',
     fontSize: 14,
-    textAlign: 'center',
+    marginBottom: 16,
+    marginLeft: 4,
   },
-});
+  button: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  footerText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  linkText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#666',
+    marginLeft: 8,
+  },
+}); 

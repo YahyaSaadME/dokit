@@ -1,165 +1,389 @@
-import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  SafeAreaView,
+  FlatList,
+  ActivityIndicator,
+  Share,
+  Alert,
+  Linking,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../context/AuthContext';
 
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import { useAuth } from '@/context/AuthContext';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+interface News {
+  _id: string;
+  headline: string;
+  summary: {
+    en: { audio: string, text: string },
+    hi: { audio: string, text: string },
+    hi_en: { audio: string, text: string }
+  };
+  date: string;
+  country: string;
+  state: string;
+  city_town: string;
+  genre: string;
+  keywords: string;
+  url: string;
+  img: string;
+  createdAt: string;
+}
 
-export default function TabTwoScreen() {
-  const colorScheme = useColorScheme();
-  const { logout } = useAuth();
-  const router = useRouter();
+const BookmarkCard = ({ item, onRemove }: { item: News; onRemove: (id: string) => void }) => {
+  const [removing, setRemoving] = useState(false);
 
-  const handleLogout = async () => {
-    await logout();
-    router.replace('/auth/login');
+  const handleShare = async () => {
+    try {
+      const shareContent = {
+        title: item.headline,
+        message: `${item.headline}\n\n${item.summary.en.text}\n\nRead more: ${item.url}`,
+        url: item.url,
+      };
+      
+      await Share.share(shareContent);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share the news');
+    }
   };
 
-  const handleProfilePress = () => {
-    router.push('/profile');
+  const handleRemove = async () => {
+    setRemoving(true);
+    try {
+      onRemove(item._id);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const handleReadMore = () => {
+    if (item.url) {
+      Linking.openURL(item.url);
+    }
   };
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <View style={styles.headerActions}>
-        <ThemedText type="title">Explore</ThemedText>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            onPress={handleProfilePress}
-            style={styles.actionButton}
-          >
-            <ThemedText>Profile</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            onPress={handleLogout}
-            style={[styles.actionButton, styles.logoutButton]}
-          >
-            <ThemedText style={styles.logoutText}>Logout</ThemedText>
-          </TouchableOpacity>
+    <View style={styles.bookmarkCard}>
+      <Image 
+        source={{ uri: item.img || 'https://via.placeholder.com/400x200?text=News' }} 
+        style={styles.cardImage}
+        resizeMode="cover"
+      />
+      <View style={styles.cardContent}>
+        <Text style={styles.headline}>{item.headline}</Text>
+        <Text style={styles.summaryText} numberOfLines={4}>
+          {item.summary.en.text}
+        </Text>
+        
+        <View style={styles.cardFooter}>
+          <View style={styles.sourceContainer}>
+            <Text style={styles.locationText}>
+              {item.city_town}, {item.state}
+            </Text>
+            <Text style={styles.dateText}>
+              {new Date(item.date).toLocaleDateString()}
+            </Text>
+          </View>
+          
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.shareButton]}
+              onPress={handleShare}
+            >
+              <Ionicons name="share-outline" size={16} color="#007AFF" />
+              <Text style={styles.shareButtonText}>Share</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, styles.removeButton]}
+              onPress={handleRemove}
+              disabled={removing}
+            >
+              <Ionicons name="trash-outline" size={16} color="#ff6b6b" />
+              <Text style={styles.removeButtonText}>
+                {removing ? '...' : 'Remove'}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, styles.readMoreButton]}
+              onPress={handleReadMore}
+            >
+              <Ionicons name="open-outline" size={16} color="#007AFF" />
+              <Text style={styles.readMoreButtonText}>Read</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-      
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    </View>
+  );
+};
+
+export default function ExploreScreen() {
+  const { getBookmarks, removeBookmark } = useAuth();
+  const [bookmarks, setBookmarks] = useState<News[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadBookmarks();
+  }, []);
+
+  const loadBookmarks = async () => {
+    try {
+      setLoading(true);
+      const result = await getBookmarks();
+      if (result.success && result.bookmarks) {
+        setBookmarks(result.bookmarks);
+      } else {
+        setError(result.message || 'Failed to load bookmarks');
+      }
+    } catch (error) {
+      setError('Failed to load bookmarks');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveBookmark = async (newsId: string) => {
+    try {
+      const result = await removeBookmark(newsId);
+      if (result.success) {
+        setBookmarks(prev => prev.filter(item => item._id !== newsId));
+      } else {
+        Alert.alert('Error', result.message || 'Failed to remove bookmark');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to remove bookmark');
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Bookmarks</Text>
+        </View>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Loading bookmarks...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Bookmarks</Text>
+        </View>
+        <View style={styles.centered}>
+          <Ionicons name="alert-circle-outline" size={48} color="#ff6b6b" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadBookmarks}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Bookmarks</Text>
+        <Text style={styles.headerSubtitle}>
+          {bookmarks.length} saved article{bookmarks.length !== 1 ? 's' : ''}
+        </Text>
+      </View>
+
+      {bookmarks.length === 0 ? (
+        <View style={styles.centered}>
+          <Ionicons name="bookmark-outline" size={64} color="#ccc" />
+          <Text style={styles.emptyTitle}>No bookmarks yet</Text>
+          <Text style={styles.emptySubtitle}>
+            Save articles you want to read later by tapping the bookmark button
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={bookmarks}
+          renderItem={({ item }) => (
+            <BookmarkCard item={item} onRemove={handleRemoveBookmark} />
+          )}
+          keyExtractor={item => item._id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContainer}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
   },
-  headerActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#666',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#ff6b6b',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  emptyTitle: {
+    marginTop: 16,
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#666',
+  },
+  emptySubtitle: {
+    marginTop: 8,
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  listContainer: {
+    padding: 20,
+  },
+  bookmarkCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  cardImage: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#f0f0f0',
+  },
+  cardContent: {
+    padding: 20,
+  },
+  headline: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#333',
+    lineHeight: 24,
+  },
+  summaryText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#666',
+    marginBottom: 16,
+  },
+  cardFooter: {
+    marginTop: 'auto',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  sourceContainer: {
+    marginBottom: 12,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  dateText: {
+    fontSize: 11,
+    color: '#999',
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
+    gap: 8,
   },
   actionButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F0F0F0',
-  },
-  logoutButton: {
-    backgroundColor: '#FFE5E5',
-  },
-  logoutText: {
-    color: '#D32F2F',
-  },
-  titleContainer: {
+    flex: 1,
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  shareButton: {
+    backgroundColor: '#f0f8ff',
+    borderColor: '#007AFF',
+  },
+  shareButtonText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  removeButton: {
+    backgroundColor: '#fff',
+    borderColor: '#ff6b6b',
+  },
+  removeButtonText: {
+    color: '#ff6b6b',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  readMoreButton: {
+    backgroundColor: '#fff',
+    borderColor: '#007AFF',
+  },
+  readMoreButtonText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
